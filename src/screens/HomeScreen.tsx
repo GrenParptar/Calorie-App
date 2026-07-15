@@ -8,6 +8,7 @@ import { colors, spacing, typography } from '@/theme/theme';
 import { useUser } from '@/context/UserContext';
 import { useLog } from '@/context/LogContext';
 import { FoodEntry, MealType } from '@/types';
+import { formatVolume } from '@/utils/unitConversions';
 
 const MEAL_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
@@ -30,17 +31,18 @@ export function HomeScreen() {
 
   if (!profile || !plan) return null;
 
-  const consumedCalories = today.foods.reduce((sum, f) => sum + f.calories, 0);
-  const consumedProtein = today.foods.reduce((sum, f) => sum + f.proteinG, 0);
-  const consumedCarbs = today.foods.reduce((sum, f) => sum + f.carbsG, 0);
-  const consumedFat = today.foods.reduce((sum, f) => sum + f.fatG, 0);
-  const consumedSugar = today.foods.reduce((sum, f) => sum + f.sugarG, 0);
+  const consumedCalories = today.foods.reduce((sum, f) => sum + (f.calories ?? 0), 0);
+  const consumedProtein = today.foods.reduce((sum, f) => sum + (f.proteinG ?? 0), 0);
+  const consumedCarbs = today.foods.reduce((sum, f) => sum + (f.carbsG ?? 0), 0);
+  const consumedFat = today.foods.reduce((sum, f) => sum + (f.fatG ?? 0), 0);
+  const consumedSugar = today.foods.reduce((sum, f) => sum + (f.sugarG ?? 0), 0);
   const waterMl = today.water.reduce((sum, w) => sum + w.amountMl, 0);
   const waterGoalMl = 2000;
   const caloriesBurned = today.exercises.reduce((sum, e) => sum + e.caloriesBurned, 0);
 
   const remaining = plan.calories - consumedCalories + caloriesBurned;
   const groupedFoods = groupByMeal(today.foods);
+  const isOverCalorieBudget = consumedCalories > plan.calories;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
@@ -54,7 +56,11 @@ export function HomeScreen() {
           {caloriesBurned > 0 ? ` + ${caloriesBurned} burned` : ''}
         </Text>
         <View style={styles.spacer} />
-        <ProgressBar progress={consumedCalories / plan.calories} color={colors.terracotta} />
+        <ProgressBar
+          progress={consumedCalories / plan.calories}
+          color={isOverCalorieBudget ? colors.rust : colors.terracotta}
+        />
+        {isOverCalorieBudget && <Text style={styles.warningText}>Over your daily calorie goal</Text>}
       </BohoCard>
 
       <BohoCard style={styles.section}>
@@ -69,8 +75,8 @@ export function HomeScreen() {
 
       <BohoCard style={styles.section}>
         <Text style={typography.heading as any}>Water</Text>
-        <Text style={styles.bigNumber}>{(waterMl / 1000).toFixed(1)}L</Text>
-        <Text style={typography.caption as any}>of {(waterGoalMl / 1000).toFixed(1)}L goal</Text>
+        <Text style={styles.bigNumber}>{formatVolume(waterMl, profile.unitSystem)}</Text>
+        <Text style={typography.caption as any}>of {formatVolume(waterGoalMl, profile.unitSystem)} goal</Text>
         <View style={styles.spacer} />
         <ProgressBar progress={waterMl / waterGoalMl} color={colors.water} />
       </BohoCard>

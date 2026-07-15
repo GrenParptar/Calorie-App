@@ -19,9 +19,13 @@ function emptyLog(date: string): DailyLog {
   return { date, foods: [], water: [], exercises: [] };
 }
 
-// Older persisted logs (pre-exercise-tracking) won't have an `exercises` array.
+// Older persisted logs may predate the exercises array or the sugar macro field.
 function normalizeLog(log: DailyLog): DailyLog {
-  return { ...log, exercises: log.exercises ?? [] };
+  return {
+    ...log,
+    exercises: log.exercises ?? [],
+    foods: log.foods.map((f) => ({ ...f, sugarG: f.sugarG ?? 0 })),
+  };
 }
 
 export function LogProvider({ children }: { children: React.ReactNode }) {

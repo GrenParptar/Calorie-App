@@ -1,30 +1,79 @@
 import { FoodEntry } from '@/types';
+import { NutritionBasis } from '@/utils/foodPortions';
 
 export interface AiFoodResult {
   name: string;
   brand?: string;
-  quantity: number;
-  unit: string;
-  calories: number;
-  proteinG: number;
-  carbsG: number;
-  fatG: number;
-  sugarG: number;
+  /** Nutrition per 100g — the common basis every unit (g / oz / serving) converts through. */
+  basis: NutritionBasis;
+  /** Grams in one "serving", if the source knows one (e.g. "1 bar (40g)", "1 medium banana (118g)"). */
+  servingSizeG?: number;
+  /** Human label for the serving unit, e.g. "1 bar", "1 medium banana". */
+  servingLabel?: string;
   confidence: 'high' | 'medium' | 'low';
   source: FoodEntry['source'];
 }
 
 // A tiny offline dataset so the app is usable and demoable without network access
 // at all (no Open Food Facts, no AI backend). This is only the last-resort safety net.
+// Values are per-100g (USDA-reference-based) plus a typical serving size in grams.
 const LOCAL_FALLBACK_FOODS: Record<string, Omit<AiFoodResult, 'source'>> = {
-  banana: { name: 'Banana', quantity: 1, unit: 'medium (118g)', calories: 105, proteinG: 1.3, carbsG: 27, fatG: 0.4, sugarG: 14, confidence: 'high' },
-  'chicken breast': { name: 'Chicken breast, grilled', quantity: 100, unit: 'g', calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6, sugarG: 0, confidence: 'high' },
-  'greek yogurt': { name: 'Greek yogurt, plain', quantity: 170, unit: 'g (1 cup)', calories: 100, proteinG: 17, carbsG: 6, fatG: 0.7, sugarG: 6, confidence: 'high' },
-  avocado: { name: 'Avocado', quantity: 1, unit: 'medium', calories: 234, proteinG: 2.9, carbsG: 12, fatG: 21, sugarG: 1, confidence: 'high' },
-  oatmeal: { name: 'Oatmeal, cooked with water', quantity: 1, unit: 'cup', calories: 158, proteinG: 6, carbsG: 27, fatG: 3.2, sugarG: 1, confidence: 'medium' },
-  almonds: { name: 'Almonds', quantity: 28, unit: 'g (~23 almonds)', calories: 164, proteinG: 6, carbsG: 6, fatG: 14, sugarG: 1, confidence: 'high' },
-  egg: { name: 'Egg, large', quantity: 1, unit: 'egg', calories: 72, proteinG: 6.3, carbsG: 0.4, fatG: 4.8, sugarG: 0.2, confidence: 'high' },
-  rice: { name: 'White rice, cooked', quantity: 1, unit: 'cup', calories: 205, proteinG: 4.3, carbsG: 45, fatG: 0.4, sugarG: 0.1, confidence: 'medium' },
+  banana: {
+    name: 'Banana',
+    basis: { caloriesPer100g: 89, proteinPer100g: 1.1, carbsPer100g: 22.8, fatPer100g: 0.3, sugarPer100g: 12.2 },
+    servingSizeG: 118,
+    servingLabel: '1 medium banana',
+    confidence: 'high',
+  },
+  'chicken breast': {
+    name: 'Chicken breast, grilled',
+    basis: { caloriesPer100g: 165, proteinPer100g: 31, carbsPer100g: 0, fatPer100g: 3.6, sugarPer100g: 0 },
+    servingSizeG: 85,
+    servingLabel: '3 oz cooked',
+    confidence: 'high',
+  },
+  'greek yogurt': {
+    name: 'Greek yogurt, plain',
+    basis: { caloriesPer100g: 59, proteinPer100g: 10, carbsPer100g: 3.6, fatPer100g: 0.4, sugarPer100g: 3.6 },
+    servingSizeG: 170,
+    servingLabel: '1 cup',
+    confidence: 'high',
+  },
+  avocado: {
+    name: 'Avocado',
+    basis: { caloriesPer100g: 160, proteinPer100g: 2, carbsPer100g: 8.5, fatPer100g: 14.7, sugarPer100g: 0.7 },
+    servingSizeG: 150,
+    servingLabel: '1 medium avocado',
+    confidence: 'high',
+  },
+  oatmeal: {
+    name: 'Oatmeal, cooked with water',
+    basis: { caloriesPer100g: 68, proteinPer100g: 2.5, carbsPer100g: 12, fatPer100g: 1.4, sugarPer100g: 0.4 },
+    servingSizeG: 234,
+    servingLabel: '1 cup cooked',
+    confidence: 'medium',
+  },
+  almonds: {
+    name: 'Almonds',
+    basis: { caloriesPer100g: 586, proteinPer100g: 21, carbsPer100g: 22, fatPer100g: 50, sugarPer100g: 4.4 },
+    servingSizeG: 28,
+    servingLabel: '1 oz (~23 almonds)',
+    confidence: 'high',
+  },
+  egg: {
+    name: 'Egg, large',
+    basis: { caloriesPer100g: 144, proteinPer100g: 12.6, carbsPer100g: 0.8, fatPer100g: 9.6, sugarPer100g: 0.4 },
+    servingSizeG: 50,
+    servingLabel: '1 large egg',
+    confidence: 'high',
+  },
+  rice: {
+    name: 'White rice, cooked',
+    basis: { caloriesPer100g: 130, proteinPer100g: 2.7, carbsPer100g: 28.2, fatPer100g: 0.3, sugarPer100g: 0.1 },
+    servingSizeG: 158,
+    servingLabel: '1 cup cooked',
+    confidence: 'medium',
+  },
 };
 
 const SYSTEM_PROMPT = `You are a nutrition data extraction assistant embedded in a calorie-tracking app.
@@ -41,19 +90,21 @@ Respond ONLY with strict JSON matching this shape, no prose, no markdown fences:
 {
   "name": string,
   "brand": string | null,
-  "quantity": number,
-  "unit": string,
-  "calories": number,
-  "proteinG": number,
-  "carbsG": number,
-  "fatG": number,
-  "sugarG": number,
+  "caloriesPer100g": number,
+  "proteinPer100g": number,
+  "carbsPer100g": number,
+  "fatPer100g": number,
+  "sugarPer100g": number,
+  "servingSizeG": number | null,
+  "servingLabel": string | null,
   "confidence": "high" | "medium" | "low"
 }
 
-If the user gives a quantity ("2 eggs", "150g chicken"), scale the nutrition to that quantity
-and set "quantity"/"unit" to reflect it. If no quantity is given, use the label's serving size
-for branded items, or a typical single serving otherwise.
+Always report nutrition as an amount PER 100 GRAMS — never scaled to a specific quantity the
+user typed, since the app handles unit conversion and serving-size math itself. If the food has
+a natural serving (a bar, a can, a medium fruit, a slice), set "servingSizeG" to that serving's
+weight in grams and "servingLabel" to a short human description (e.g. "1 bar", "1 medium apple").
+If there's no natural discrete serving (rice, chicken breast), set both to null.
 Set "confidence" to "low" only if you couldn't find or verify real data and are estimating.`;
 
 interface AiClientConfig {
@@ -74,17 +125,19 @@ function parseModelJson(text: string): AiFoodResult | null {
   try {
     const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/, '');
     const parsed = JSON.parse(cleaned);
-    if (typeof parsed.calories !== 'number' || typeof parsed.name !== 'string') return null;
+    if (typeof parsed.caloriesPer100g !== 'number' || typeof parsed.name !== 'string') return null;
     return {
       name: parsed.name,
       brand: parsed.brand ?? undefined,
-      quantity: parsed.quantity ?? 1,
-      unit: parsed.unit ?? 'serving',
-      calories: Math.round(parsed.calories),
-      proteinG: Math.round(parsed.proteinG ?? 0),
-      carbsG: Math.round(parsed.carbsG ?? 0),
-      fatG: Math.round(parsed.fatG ?? 0),
-      sugarG: Math.round(parsed.sugarG ?? 0),
+      basis: {
+        caloriesPer100g: Math.round(parsed.caloriesPer100g),
+        proteinPer100g: Math.round((parsed.proteinPer100g ?? 0) * 10) / 10,
+        carbsPer100g: Math.round((parsed.carbsPer100g ?? 0) * 10) / 10,
+        fatPer100g: Math.round((parsed.fatPer100g ?? 0) * 10) / 10,
+        sugarPer100g: Math.round((parsed.sugarPer100g ?? 0) * 10) / 10,
+      },
+      servingSizeG: typeof parsed.servingSizeG === 'number' ? parsed.servingSizeG : undefined,
+      servingLabel: parsed.servingLabel ?? undefined,
       confidence: parsed.confidence ?? 'medium',
       source: 'ai',
     };
@@ -113,36 +166,28 @@ export function queryLocalFallback(query: string): AiFoodResult | null {
   return key ? { ...LOCAL_FALLBACK_FOODS[key], source: 'manual' } : null;
 }
 
-/** Scales a food result to a new quantity, assuming nutrition is linear in amount. */
-export function scaleFoodResult(result: AiFoodResult, newQuantity: number): AiFoodResult {
-  if (result.quantity <= 0) return result;
-  const factor = newQuantity / result.quantity;
-  return {
-    ...result,
-    quantity: newQuantity,
-    calories: Math.round(result.calories * factor),
-    proteinG: Math.round(result.proteinG * factor),
-    carbsG: Math.round(result.carbsG * factor),
-    fatG: Math.round(result.fatG * factor),
-    sugarG: Math.round(result.sugarG * factor),
-  };
-}
-
 export function aiResultToFoodEntry(
   result: AiFoodResult,
-  mealType: FoodEntry['mealType']
+  mealType: FoodEntry['mealType'],
+  quantity: number,
+  unit: string,
+  calories: number,
+  proteinG: number,
+  carbsG: number,
+  fatG: number,
+  sugarG: number
 ): FoodEntry {
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: result.name,
     brand: result.brand,
-    quantity: result.quantity,
-    unit: result.unit,
-    calories: result.calories,
-    proteinG: result.proteinG,
-    carbsG: result.carbsG,
-    fatG: result.fatG,
-    sugarG: result.sugarG,
+    quantity,
+    unit,
+    calories,
+    proteinG,
+    carbsG,
+    fatG,
+    sugarG,
     loggedAt: new Date().toISOString(),
     mealType,
     source: result.source,

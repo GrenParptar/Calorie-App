@@ -23,8 +23,10 @@ AI-powered food lookup, and a personalized plan calculator.
   database of branded/packaged foods — best source for name-brand items) first, then an AI
   backend with web search enabled (for restaurant items or anything OFF doesn't carry — see
   `src/services/aiFoodService.ts`), then a small local dataset as an offline/demo fallback.
-  Once a food is found, its logged amount is editable and rescales calories/macros/sugar
-  proportionally (`scaleFoodResult`).
+  Every source reports nutrition as a **per-100g basis** plus an optional serving size in
+  grams (`src/utils/foodPortions.ts`), so the amount can be entered in grams, ounces, or
+  servings and switching units converts the entered amount exactly rather than re-scaling a
+  loose text string.
 - **Dashboard (Home)** — remaining calories (net of exercise burned), macro rings (protein,
   carbs, fat, sugar), water progress, an exercise summary, and today's food grouped into
   breakfast/lunch/dinner/snack sections with per-meal subtotals.

@@ -3,10 +3,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { ArchHeader } from '@/components/ArchHeader';
 import { BohoCard } from '@/components/BohoCard';
 import { colors, radii, spacing, typography } from '@/theme/theme';
-import { aiResultToFoodEntry, AiFoodResult, scaleFoodResult } from '@/services/aiFoodService';
+import { aiResultToFoodEntry, AiFoodResult } from '@/services/aiFoodService';
 import { searchFood } from '@/services/foodLookupService';
 import { useLog } from '@/context/LogContext';
 import { FoodEntry } from '@/types';
+import { amountToGrams, gramsToAmount, nutritionForGrams, PortionUnit, unitLabel } from '@/utils/foodPortions';
 
 const MEALS: { value: FoodEntry['mealType']; label: string }[] = [
   { value: 'breakfast', label: 'Breakfast' },
@@ -26,28 +27,35 @@ export function FoodSearchScreen() {
   const { addFood } = useLog();
   const [query, setQuery] = useState('');
   const [mealType, setMealType] = useState<FoodEntry['mealType']>('breakfast');
-  const [baseResult, setBaseResult] = useState<AiFoodResult | null>(null);
-  const [amountText, setAmountText] = useState('');
+  const [result, setResult] = useState<AiFoodResult | null>(null);
+  const [unit, setUnit] = useState<PortionUnit>('serving');
+  const [amountText, setAmountText] = useState('1');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logged, setLogged] = useState(false);
 
-  const displayedResult: AiFoodResult | null = (() => {
-    if (!baseResult) return null;
-    const amount = Number(amountText);
-    if (!amountText || Number.isNaN(amount) || amount <= 0) return baseResult;
-    return scaleFoodResult(baseResult, amount);
-  })();
+  const availableUnits: PortionUnit[] = result?.servingSizeG ? ['serving', 'g', 'oz'] : ['g', 'oz'];
+
+  const amount = Number(amountText);
+  const isValidAmount = amountText.length > 0 && !Number.isNaN(amount) && amount > 0;
+  const grams = result && isValidAmount ? amountToGrams(amount, unit, result.servingSizeG) : 0;
+  const nutrition = result ? nutritionForGrams(result.basis, grams) : null;
 
   const handleSearch = async () => {
     setIsSearching(true);
     setError(null);
-    setBaseResult(null);
+    setResult(null);
     setLogged(false);
     try {
       const found = await searchFood(query);
-      setBaseResult(found);
-      setAmountText(String(found.quantity));
+      setResult(found);
+      if (found.servingSizeG) {
+        setUnit('serving');
+        setAmountText('1');
+      } else {
+        setUnit('g');
+        setAmountText('100');
+      }
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong.');
     } finally {
@@ -55,9 +63,31 @@ export function FoodSearchScreen() {
     }
   };
 
+  const handleUnitChange = (nextUnit: PortionUnit) => {
+    if (!result || nextUnit === unit) return;
+    // Convert the entered amount to grams under the old unit, then express that same
+    // quantity of food in the new unit — so switching units doesn't change how much food it is.
+    const currentGrams = isValidAmount ? amountToGrams(amount, unit, result.servingSizeG) : 0;
+    const nextAmount = gramsToAmount(currentGrams, nextUnit, result.servingSizeG);
+    setUnit(nextUnit);
+    setAmountText(String(nextAmount));
+  };
+
   const handleLog = () => {
-    if (!displayedResult) return;
-    addFood(aiResultToFoodEntry(displayedResult, mealType));
+    if (!result || !nutrition || !isValidAmount) return;
+    addFood(
+      aiResultToFoodEntry(
+        result,
+        mealType,
+        amount,
+        unitLabel(unit, result.servingLabel),
+        nutrition.calories,
+        nutrition.proteinG,
+        nutrition.carbsG,
+        nutrition.fatG,
+        nutrition.sugarG
+      )
+    );
     setLogged(true);
   };
 
@@ -90,15 +120,30 @@ export function FoodSearchScreen() {
         </BohoCard>
       )}
 
-      {displayedResult && (
+      {result && nutrition && (
         <BohoCard style={styles.section}>
-          <Text style={typography.heading as any}>{displayedResult.name}</Text>
-          {displayedResult.brand ? <Text style={typography.caption as any}>{displayedResult.brand}</Text> : null}
+          <Text style={typography.heading as any}>{result.name}</Text>
+          {result.brand ? <Text style={typography.caption as any}>{result.brand}</Text> : null}
           <Text style={[typography.caption as any, styles.spacer]}>
-            source: {SOURCE_LABELS[displayedResult.source]} · confidence: {displayedResult.confidence}
+            source: {SOURCE_LABELS[result.source]} · confidence: {result.confidence}
           </Text>
 
-          <Text style={[typography.label as any, styles.spacer]}>AMOUNT ({displayedResult.unit})</Text>
+          <Text style={[typography.label as any, styles.spacer]}>UNIT</Text>
+          <View style={styles.mealRow}>
+            {availableUnits.map((u) => (
+              <Pressable
+                key={u}
+                style={[styles.mealPill, unit === u && styles.mealPillSelected]}
+                onPress={() => handleUnitChange(u)}
+              >
+                <Text style={[styles.mealPillText, unit === u && styles.mealPillTextSelected]}>
+                  {unitLabel(u, result.servingLabel)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={[typography.label as any, styles.spacer]}>AMOUNT</Text>
           <TextInput
             style={styles.input}
             keyboardType="numeric"
@@ -107,11 +152,11 @@ export function FoodSearchScreen() {
           />
 
           <View style={styles.macroGrid}>
-            <MacroStat label="Calories" value={`${displayedResult.calories}`} />
-            <MacroStat label="Protein" value={`${displayedResult.proteinG}g`} />
-            <MacroStat label="Carbs" value={`${displayedResult.carbsG}g`} />
-            <MacroStat label="Fat" value={`${displayedResult.fatG}g`} />
-            <MacroStat label="Sugar" value={`${displayedResult.sugarG}g`} />
+            <MacroStat label="Calories" value={`${nutrition.calories}`} />
+            <MacroStat label="Protein" value={`${nutrition.proteinG}g`} />
+            <MacroStat label="Carbs" value={`${nutrition.carbsG}g`} />
+            <MacroStat label="Fat" value={`${nutrition.fatG}g`} />
+            <MacroStat label="Sugar" value={`${nutrition.sugarG}g`} />
           </View>
 
           <Text style={[typography.label as any, styles.spacer]}>LOG AS</Text>
@@ -129,7 +174,7 @@ export function FoodSearchScreen() {
             ))}
           </View>
 
-          <Pressable style={styles.logButton} onPress={handleLog}>
+          <Pressable style={styles.logButton} onPress={handleLog} disabled={!isValidAmount}>
             <Text style={styles.logButtonText}>{logged ? 'Logged ✓' : 'Add to log'}</Text>
           </Pressable>
         </BohoCard>
