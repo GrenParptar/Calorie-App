@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Bloom — Calorie & Macro Tracker",
+    "slug": "bloom-calorie-tracker",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#F4E9DA"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.bloom.calorietracker"
+    },
+    "android": {
+      "package": "com.bloom.calorietracker",
+      "adaptiveIcon": {
+        "backgroundColor": "#F4E9DA"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
