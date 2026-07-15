@@ -166,6 +166,14 @@ export function queryLocalFallback(query: string): AiFoodResult | null {
   return key ? { ...LOCAL_FALLBACK_FOODS[key], source: 'manual' } : null;
 }
 
+export function queryLocalFallbackCandidates(query: string): AiFoodResult[] {
+  const trimmed = query.trim().toLowerCase();
+  if (!trimmed) return [];
+  return Object.keys(LOCAL_FALLBACK_FOODS)
+    .filter((k) => k.includes(trimmed) || trimmed.includes(k))
+    .map((k) => ({ ...LOCAL_FALLBACK_FOODS[k], source: 'manual' as const }));
+}
+
 export function aiResultToFoodEntry(
   result: AiFoodResult,
   mealType: FoodEntry['mealType'],

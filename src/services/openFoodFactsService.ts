@@ -53,18 +53,62 @@ function productToResult(product: OffProduct): AiFoodResult | null {
   };
 }
 
-export async function searchOpenFoodFacts(query: string): Promise<AiFoodResult | null> {
-  const url = `${SEARCH_URL}?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5`;
+/** Query variants to try, broadest-relevance-first: the exact text, then a version with
+ *  punctuation stripped (apostrophes/possessives trip up OFF's legacy text search — "lay's"
+ *  vs "lays" can be the difference between zero hits and a full shelf of matches). */
+function queryVariants(query: string): string[] {
+  const trimmed = query.trim();
+  const stripped = trimmed.replace(/['’]/g, '');
+  const variants = [trimmed];
+  if (stripped !== trimmed) variants.push(stripped);
+  return variants;
+}
+
+async function fetchProducts(query: string, pageSize: number): Promise<OffProduct[]> {
+  // Sort by popularity (scan count) so the well-known version of a branded product
+  // (e.g. the actual Lay's Classic bag) outranks obscure regional variants.
+  const url =
+    `${SEARCH_URL}?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1` +
+    `&page_size=${pageSize}&sort_by=unique_scans_n`;
 
   const response = await fetch(url);
-  if (!response.ok) return null;
-
+  if (!response.ok) return [];
   const data = await response.json();
-  const products: OffProduct[] = data.products ?? [];
+  return data.products ?? [];
+}
 
-  for (const product of products) {
-    const result = productToResult(product);
-    if (result) return result;
+function dedupe(results: AiFoodResult[]): AiFoodResult[] {
+  const seen = new Set<string>();
+  return results.filter((r) => {
+    const key = `${r.name.toLowerCase()}|${r.brand?.toLowerCase() ?? ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** Returns several matching branded products so the UI can show a picker instead of
+ *  silently guessing at the single "best" one. */
+export async function searchOpenFoodFactsCandidates(query: string, limit = 8): Promise<AiFoodResult[]> {
+  const results: AiFoodResult[] = [];
+
+  for (const variant of queryVariants(query)) {
+    try {
+      const products = await fetchProducts(variant, limit * 2);
+      for (const product of products) {
+        const result = productToResult(product);
+        if (result) results.push(result);
+      }
+    } catch {
+      // try the next variant
+    }
+    if (results.length >= limit) break;
   }
-  return null;
+
+  return dedupe(results).slice(0, limit);
+}
+
+export async function searchOpenFoodFacts(query: string): Promise<AiFoodResult | null> {
+  const [first] = await searchOpenFoodFactsCandidates(query, 1);
+  return first ?? null;
 }

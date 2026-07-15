@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ArchHeader } from '@/components/ArchHeader';
 import { BohoCard } from '@/components/BohoCard';
 import { colors, radii, spacing, typography } from '@/theme/theme';
 import { aiResultToFoodEntry, AiFoodResult } from '@/services/aiFoodService';
-import { searchFood } from '@/services/foodLookupService';
+import { searchFood, searchFoodCandidates } from '@/services/foodLookupService';
 import { useLog } from '@/context/LogContext';
 import { FoodEntry } from '@/types';
 import { amountToGrams, gramsToAmount, nutritionForGrams, PortionUnit, unitLabel } from '@/utils/foodPortions';
@@ -23,6 +23,8 @@ const SOURCE_LABELS: Record<AiFoodResult['source'], string> = {
   recent: 'recent',
 };
 
+const SUGGESTION_DEBOUNCE_MS = 350;
+
 export function FoodSearchScreen() {
   const { addFood } = useLog();
   const [query, setQuery] = useState('');
@@ -34,12 +36,57 @@ export function FoodSearchScreen() {
   const [error, setError] = useState<string | null>(null);
   const [logged, setLogged] = useState(false);
 
+  const [suggestions, setSuggestions] = useState<AiFoodResult[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (result || query.trim().length < 2) {
+      setSuggestions([]);
+      setIsSuggesting(false);
+      return;
+    }
+
+    setIsSuggesting(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const found = await searchFoodCandidates(query);
+        setSuggestions(found);
+      } catch {
+        setSuggestions([]);
+      } finally {
+        setIsSuggesting(false);
+      }
+    }, SUGGESTION_DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, result]);
+
   const availableUnits: PortionUnit[] = result?.servingSizeG ? ['serving', 'g', 'oz'] : ['g', 'oz'];
 
   const amount = Number(amountText);
   const isValidAmount = amountText.length > 0 && !Number.isNaN(amount) && amount > 0;
   const grams = result && isValidAmount ? amountToGrams(amount, unit, result.servingSizeG) : 0;
   const nutrition = result ? nutritionForGrams(result.basis, grams) : null;
+
+  const applyResult = (found: AiFoodResult) => {
+    setResult(found);
+    setSuggestions([]);
+    setError(null);
+    setLogged(false);
+    if (found.servingSizeG) {
+      setUnit('serving');
+      setAmountText('1');
+    } else {
+      setUnit('g');
+      setAmountText('100');
+    }
+  };
 
   const handleSearch = async () => {
     setIsSearching(true);
@@ -48,19 +95,18 @@ export function FoodSearchScreen() {
     setLogged(false);
     try {
       const found = await searchFood(query);
-      setResult(found);
-      if (found.servingSizeG) {
-        setUnit('serving');
-        setAmountText('1');
-      } else {
-        setUnit('g');
-        setAmountText('100');
-      }
+      applyResult(found);
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong.');
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleClearResult = () => {
+    setResult(null);
+    setError(null);
+    setLogged(false);
   };
 
   const handleUnitChange = (nextUnit: PortionUnit) => {
@@ -98,13 +144,42 @@ export function FoodSearchScreen() {
       <BohoCard style={styles.section}>
         <TextInput
           style={styles.input}
-          placeholder='e.g. "Quest protein bar" or "2 scrambled eggs"'
+          placeholder={'e.g. "Lay\'s potato chips" or "2 scrambled eggs"'}
           placeholderTextColor={colors.inkSoft}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={(text) => {
+            setQuery(text);
+            setResult(null);
+          }}
           onSubmitEditing={handleSearch}
           returnKeyType="search"
         />
+
+        {isSuggesting && (
+          <View style={styles.suggestingRow}>
+            <ActivityIndicator size="small" color={colors.terracotta} />
+            <Text style={[typography.caption as any, styles.suggestingText]}>Searching…</Text>
+          </View>
+        )}
+
+        {!result && suggestions.length > 0 && (
+          <View style={styles.dropdown}>
+            {suggestions.map((s, i) => (
+              <Pressable
+                key={`${s.name}-${i}`}
+                style={[styles.suggestionRow, i === suggestions.length - 1 && styles.suggestionRowLast]}
+                onPress={() => applyResult(s)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={typography.body as any}>{s.name}</Text>
+                  {s.brand ? <Text style={typography.caption as any}>{s.brand}</Text> : null}
+                </View>
+                <Text style={typography.caption as any}>{s.basis.caloriesPer100g} kcal/100g</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
         <Pressable style={styles.searchButton} onPress={handleSearch} disabled={isSearching}>
           {isSearching ? (
             <ActivityIndicator color={colors.cream} />
@@ -122,7 +197,11 @@ export function FoodSearchScreen() {
 
       {result && nutrition && (
         <BohoCard style={styles.section}>
-          <Text style={typography.heading as any}>{result.name}</Text>
+          <Pressable style={styles.closeButton} onPress={handleClearResult} hitSlop={10}>
+            <Text style={styles.closeButtonText}>✕</Text>
+          </Pressable>
+
+          <Text style={[typography.heading as any, styles.resultTitle]}>{result.name}</Text>
           {result.brand ? <Text style={typography.caption as any}>{result.brand}</Text> : null}
           <Text style={[typography.caption as any, styles.spacer]}>
             source: {SOURCE_LABELS[result.source]} · confidence: {result.confidence}
@@ -207,6 +286,32 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 15,
   },
+  suggestingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+    gap: spacing.xs,
+  },
+  suggestingText: { marginLeft: spacing.xs },
+  dropdown: {
+    marginTop: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    backgroundColor: colors.cream,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: spacing.sm,
+  },
+  suggestionRowLast: { borderBottomWidth: 0 },
   searchButton: {
     backgroundColor: colors.terracottaDark,
     borderRadius: radii.pill,
@@ -217,6 +322,20 @@ const styles = StyleSheet.create({
   searchButtonText: { color: colors.cream, fontWeight: '700' },
   errorCard: { backgroundColor: '#F3E3CE', borderColor: colors.warning },
   errorText: { color: colors.rust },
+  closeButton: {
+    position: 'absolute',
+    top: spacing.md,
+    right: spacing.md,
+    zIndex: 1,
+    width: 28,
+    height: 28,
+    borderRadius: radii.pill,
+    backgroundColor: colors.sand,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: { color: colors.ink, fontSize: 14, fontWeight: '700' },
+  resultTitle: { paddingRight: spacing.xl },
   macroGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

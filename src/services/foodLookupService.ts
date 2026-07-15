@@ -1,5 +1,5 @@
-import { AiFoodResult, queryAiBackend, queryLocalFallback } from '@/services/aiFoodService';
-import { searchOpenFoodFacts } from '@/services/openFoodFactsService';
+import { AiFoodResult, queryAiBackend, queryLocalFallback, queryLocalFallbackCandidates } from '@/services/aiFoodService';
+import { searchOpenFoodFacts, searchOpenFoodFactsCandidates } from '@/services/openFoodFactsService';
 
 /**
  * Resolves a free-text food description ("2 boiled eggs", "Cheerios", "grande oat milk latte")
@@ -32,4 +32,24 @@ export async function searchFood(query: string): Promise<AiFoodResult> {
   throw new Error(
     `Couldn't find nutrition data for "${trimmed}". Try being more specific, or add it manually.`
   );
+}
+
+/**
+ * Live "as you type" suggestions: several close matches from Open Food Facts plus the local
+ * dataset, for a picker dropdown. Deliberately skips the AI tier — that one's slower and is
+ * reserved for the explicit search action so typing doesn't fire an LLM call per keystroke.
+ */
+export async function searchFoodCandidates(query: string, limit = 6): Promise<AiFoodResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length < 2) return [];
+
+  let offCandidates: AiFoodResult[] = [];
+  try {
+    offCandidates = await searchOpenFoodFactsCandidates(trimmed, limit);
+  } catch {
+    offCandidates = [];
+  }
+
+  const localCandidates = queryLocalFallbackCandidates(trimmed);
+  return [...offCandidates, ...localCandidates].slice(0, limit);
 }
