@@ -7,6 +7,7 @@ import { useUser } from '@/context/UserContext';
 import { OnboardingScreen } from '@/screens/OnboardingScreen';
 import { HomeScreen } from '@/screens/HomeScreen';
 import { FoodSearchScreen } from '@/screens/FoodSearchScreen';
+import { ExerciseScreen } from '@/screens/ExerciseScreen';
 import { WaterScreen } from '@/screens/WaterScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 
@@ -15,6 +16,7 @@ const Tab = createBottomTabNavigator();
 const TAB_ICONS: Record<string, string> = {
   Home: '◐',
   Search: '⟡',
+  Exercise: '✺',
   Water: '◆',
   Profile: '❁',
 };
@@ -41,6 +43,7 @@ export function RootNavigator() {
       >
         <Tab.Screen name="Home" component={HomeScreen} />
         <Tab.Screen name="Search" component={FoodSearchScreen} />
+        <Tab.Screen name="Exercise" component={ExerciseScreen} />
         <Tab.Screen name="Water" component={WaterScreen} />
         <Tab.Screen name="Profile" component={ProfileScreen} />
       </Tab.Navigator>

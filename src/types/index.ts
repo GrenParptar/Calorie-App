@@ -9,6 +9,8 @@ export type ActivityLevel =
 
 export type GoalDirection = 'lose' | 'maintain' | 'gain';
 
+export type UnitSystem = 'metric' | 'imperial';
+
 export interface UserProfile {
   name: string;
   gender: Gender;
@@ -19,6 +21,7 @@ export interface UserProfile {
   goalDirection: GoalDirection;
   goalWeightKg: number;
   goalTimeframeWeeks: number;
+  unitSystem: UnitSystem;
 }
 
 export interface MacroTargets {
@@ -26,6 +29,7 @@ export interface MacroTargets {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  sugarLimitG: number;
 }
 
 export interface PlanSummary extends MacroTargets {
@@ -38,6 +42,8 @@ export interface PlanSummary extends MacroTargets {
   suggestedExerciseSessionsPerWeek: number;
 }
 
+export type MealType = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
 export interface FoodEntry {
   id: string;
   name: string;
@@ -48,9 +54,10 @@ export interface FoodEntry {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  sugarG: number;
   loggedAt: string; // ISO timestamp
-  mealType: 'breakfast' | 'lunch' | 'dinner' | 'snack';
-  source: 'ai' | 'manual' | 'recent';
+  mealType: MealType;
+  source: 'open-food-facts' | 'ai' | 'manual' | 'recent';
 }
 
 export interface WaterEntry {
@@ -59,8 +66,18 @@ export interface WaterEntry {
   loggedAt: string;
 }
 
+export interface ExerciseEntry {
+  id: string;
+  name: string;
+  met: number;
+  durationMinutes: number;
+  caloriesBurned: number;
+  loggedAt: string;
+}
+
 export interface DailyLog {
   date: string; // YYYY-MM-DD
   foods: FoodEntry[];
   water: WaterEntry[];
+  exercises: ExerciseEntry[];
 }

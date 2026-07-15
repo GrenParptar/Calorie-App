@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { DailyLog, FoodEntry, WaterEntry } from '@/types';
+import { DailyLog, ExerciseEntry, FoodEntry, WaterEntry } from '@/types';
 import { loadAllLogs, saveAllLogs, todayKey } from '@/services/storage';
 
 interface LogContextValue {
@@ -9,12 +9,19 @@ interface LogContextValue {
   removeFood: (id: string) => void;
   addWater: (amountMl: number) => void;
   removeWater: (id: string) => void;
+  addExercise: (name: string, met: number, durationMinutes: number, caloriesBurned: number) => void;
+  removeExercise: (id: string) => void;
 }
 
 const LogContext = createContext<LogContextValue | undefined>(undefined);
 
 function emptyLog(date: string): DailyLog {
-  return { date, foods: [], water: [] };
+  return { date, foods: [], water: [], exercises: [] };
+}
+
+// Older persisted logs (pre-exercise-tracking) won't have an `exercises` array.
+function normalizeLog(log: DailyLog): DailyLog {
+  return { ...log, exercises: log.exercises ?? [] };
 }
 
 export function LogProvider({ children }: { children: React.ReactNode }) {
@@ -34,20 +41,20 @@ export function LogProvider({ children }: { children: React.ReactNode }) {
     saveAllLogs(next);
   };
 
-  const today = logs[key] ?? emptyLog(key);
+  const today = normalizeLog(logs[key] ?? emptyLog(key));
 
   const addFood = (entry: FoodEntry) => {
-    const current = logs[key] ?? emptyLog(key);
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
     persist({ ...logs, [key]: { ...current, foods: [...current.foods, entry] } });
   };
 
   const removeFood = (id: string) => {
-    const current = logs[key] ?? emptyLog(key);
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
     persist({ ...logs, [key]: { ...current, foods: current.foods.filter((f) => f.id !== id) } });
   };
 
   const addWater = (amountMl: number) => {
-    const current = logs[key] ?? emptyLog(key);
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
     const entry: WaterEntry = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       amountMl,
@@ -57,12 +64,30 @@ export function LogProvider({ children }: { children: React.ReactNode }) {
   };
 
   const removeWater = (id: string) => {
-    const current = logs[key] ?? emptyLog(key);
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
     persist({ ...logs, [key]: { ...current, water: current.water.filter((w) => w.id !== id) } });
   };
 
+  const addExercise = (name: string, met: number, durationMinutes: number, caloriesBurned: number) => {
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
+    const entry: ExerciseEntry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name,
+      met,
+      durationMinutes,
+      caloriesBurned,
+      loggedAt: new Date().toISOString(),
+    };
+    persist({ ...logs, [key]: { ...current, exercises: [...current.exercises, entry] } });
+  };
+
+  const removeExercise = (id: string) => {
+    const current = normalizeLog(logs[key] ?? emptyLog(key));
+    persist({ ...logs, [key]: { ...current, exercises: current.exercises.filter((e) => e.id !== id) } });
+  };
+
   const value = useMemo(
-    () => ({ today, isLoading, addFood, removeFood, addWater, removeWater }),
+    () => ({ today, isLoading, addFood, removeFood, addWater, removeWater, addExercise, removeExercise }),
     [today, isLoading, logs]
   );
 

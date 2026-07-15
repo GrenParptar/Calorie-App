@@ -9,26 +9,33 @@ export interface AiFoodResult {
   proteinG: number;
   carbsG: number;
   fatG: number;
+  sugarG: number;
   confidence: 'high' | 'medium' | 'low';
+  source: FoodEntry['source'];
 }
 
 // A tiny offline dataset so the app is usable and demoable without network access
-// or an AI backend configured. The AI path (below) is what makes search open-ended —
-// this is only the safety net.
-const LOCAL_FALLBACK_FOODS: Record<string, AiFoodResult> = {
-  banana: { name: 'Banana', quantity: 1, unit: 'medium (118g)', calories: 105, proteinG: 1.3, carbsG: 27, fatG: 0.4, confidence: 'high' },
-  'chicken breast': { name: 'Chicken breast, grilled', quantity: 100, unit: 'g', calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6, confidence: 'high' },
-  'greek yogurt': { name: 'Greek yogurt, plain', quantity: 170, unit: 'g (1 cup)', calories: 100, proteinG: 17, carbsG: 6, fatG: 0.7, confidence: 'high' },
-  avocado: { name: 'Avocado', quantity: 1, unit: 'medium', calories: 234, proteinG: 2.9, carbsG: 12, fatG: 21, confidence: 'high' },
-  oatmeal: { name: 'Oatmeal, cooked with water', quantity: 1, unit: 'cup', calories: 158, proteinG: 6, carbsG: 27, fatG: 3.2, confidence: 'medium' },
-  almonds: { name: 'Almonds', quantity: 28, unit: 'g (~23 almonds)', calories: 164, proteinG: 6, carbsG: 6, fatG: 14, confidence: 'high' },
-  egg: { name: 'Egg, large', quantity: 1, unit: 'egg', calories: 72, proteinG: 6.3, carbsG: 0.4, fatG: 4.8, confidence: 'high' },
-  rice: { name: 'White rice, cooked', quantity: 1, unit: 'cup', calories: 205, proteinG: 4.3, carbsG: 45, fatG: 0.4, confidence: 'medium' },
+// at all (no Open Food Facts, no AI backend). This is only the last-resort safety net.
+const LOCAL_FALLBACK_FOODS: Record<string, Omit<AiFoodResult, 'source'>> = {
+  banana: { name: 'Banana', quantity: 1, unit: 'medium (118g)', calories: 105, proteinG: 1.3, carbsG: 27, fatG: 0.4, sugarG: 14, confidence: 'high' },
+  'chicken breast': { name: 'Chicken breast, grilled', quantity: 100, unit: 'g', calories: 165, proteinG: 31, carbsG: 0, fatG: 3.6, sugarG: 0, confidence: 'high' },
+  'greek yogurt': { name: 'Greek yogurt, plain', quantity: 170, unit: 'g (1 cup)', calories: 100, proteinG: 17, carbsG: 6, fatG: 0.7, sugarG: 6, confidence: 'high' },
+  avocado: { name: 'Avocado', quantity: 1, unit: 'medium', calories: 234, proteinG: 2.9, carbsG: 12, fatG: 21, sugarG: 1, confidence: 'high' },
+  oatmeal: { name: 'Oatmeal, cooked with water', quantity: 1, unit: 'cup', calories: 158, proteinG: 6, carbsG: 27, fatG: 3.2, sugarG: 1, confidence: 'medium' },
+  almonds: { name: 'Almonds', quantity: 28, unit: 'g (~23 almonds)', calories: 164, proteinG: 6, carbsG: 6, fatG: 14, sugarG: 1, confidence: 'high' },
+  egg: { name: 'Egg, large', quantity: 1, unit: 'egg', calories: 72, proteinG: 6.3, carbsG: 0.4, fatG: 4.8, sugarG: 0.2, confidence: 'high' },
+  rice: { name: 'White rice, cooked', quantity: 1, unit: 'cup', calories: 205, proteinG: 4.3, carbsG: 45, fatG: 0.4, sugarG: 0.1, confidence: 'medium' },
 };
 
 const SYSTEM_PROMPT = `You are a nutrition data extraction assistant embedded in a calorie-tracking app.
-Given a free-text food description (which may include a brand, quantity, and preparation method),
-return your best estimate of its nutrition facts.
+Given a free-text food description, which may name a specific brand or restaurant item
+("Quest protein bar", "Chick-fil-A chicken sandwich"), find its real nutrition facts.
+
+You have web search available — use it. For name-brand or restaurant items, search the
+manufacturer's site, the retailer/seller listing, or a nutrition label photo/description
+rather than relying on memory, since exact label values matter here and guessing produces
+wrong numbers. For generic whole foods (an apple, grilled chicken breast) standard reference
+values (e.g. USDA FoodData Central) are fine without searching.
 
 Respond ONLY with strict JSON matching this shape, no prose, no markdown fences:
 {
@@ -40,16 +47,17 @@ Respond ONLY with strict JSON matching this shape, no prose, no markdown fences:
   "proteinG": number,
   "carbsG": number,
   "fatG": number,
+  "sugarG": number,
   "confidence": "high" | "medium" | "low"
 }
 
-Use standard reference values (e.g. USDA FoodData Central) when the food is generic.
 If the user gives a quantity ("2 eggs", "150g chicken"), scale the nutrition to that quantity
-and set "quantity"/"unit" to reflect it. If no quantity is given, use a typical single serving.
-Set "confidence" to "low" if you are guessing at an unfamiliar branded or homemade item.`;
+and set "quantity"/"unit" to reflect it. If no quantity is given, use the label's serving size
+for branded items, or a typical single serving otherwise.
+Set "confidence" to "low" only if you couldn't find or verify real data and are estimating.`;
 
 interface AiClientConfig {
-  /** Base URL of a backend proxy that forwards to the Claude Messages API.
+  /** Base URL of a backend proxy that forwards to an LLM with web search enabled.
    *  The API key must live server-side — never bundle it into the mobile app. */
   proxyUrl?: string;
 }
@@ -76,14 +84,16 @@ function parseModelJson(text: string): AiFoodResult | null {
       proteinG: Math.round(parsed.proteinG ?? 0),
       carbsG: Math.round(parsed.carbsG ?? 0),
       fatG: Math.round(parsed.fatG ?? 0),
+      sugarG: Math.round(parsed.sugarG ?? 0),
       confidence: parsed.confidence ?? 'medium',
+      source: 'ai',
     };
   } catch {
     return null;
   }
 }
 
-async function queryAiBackend(query: string): Promise<AiFoodResult | null> {
+export async function queryAiBackend(query: string): Promise<AiFoodResult | null> {
   if (!config.proxyUrl) return null;
 
   const response = await fetch(`${config.proxyUrl}/food-lookup`, {
@@ -98,33 +108,24 @@ async function queryAiBackend(query: string): Promise<AiFoodResult | null> {
   return parseModelJson(text);
 }
 
-function queryLocalFallback(query: string): AiFoodResult | null {
+export function queryLocalFallback(query: string): AiFoodResult | null {
   const key = Object.keys(LOCAL_FALLBACK_FOODS).find((k) => query.toLowerCase().includes(k));
-  return key ? LOCAL_FALLBACK_FOODS[key] : null;
+  return key ? { ...LOCAL_FALLBACK_FOODS[key], source: 'manual' } : null;
 }
 
-/**
- * Resolves a free-text food description ("2 boiled eggs", "grande oat milk latte")
- * into structured nutrition data. Tries the AI backend first (if configured),
- * then falls back to a small local dataset so search still works offline/in demos.
- */
-export async function searchFoodWithAi(query: string): Promise<AiFoodResult> {
-  const trimmed = query.trim();
-  if (!trimmed) throw new Error('Enter a food to search for.');
-
-  try {
-    const aiResult = await queryAiBackend(trimmed);
-    if (aiResult) return aiResult;
-  } catch {
-    // fall through to local fallback
-  }
-
-  const fallback = queryLocalFallback(trimmed);
-  if (fallback) return fallback;
-
-  throw new Error(
-    `Couldn't find nutrition data for "${trimmed}". Try being more specific, or add it manually.`
-  );
+/** Scales a food result to a new quantity, assuming nutrition is linear in amount. */
+export function scaleFoodResult(result: AiFoodResult, newQuantity: number): AiFoodResult {
+  if (result.quantity <= 0) return result;
+  const factor = newQuantity / result.quantity;
+  return {
+    ...result,
+    quantity: newQuantity,
+    calories: Math.round(result.calories * factor),
+    proteinG: Math.round(result.proteinG * factor),
+    carbsG: Math.round(result.carbsG * factor),
+    fatG: Math.round(result.fatG * factor),
+    sugarG: Math.round(result.sugarG * factor),
+  };
 }
 
 export function aiResultToFoodEntry(
@@ -141,8 +142,9 @@ export function aiResultToFoodEntry(
     proteinG: result.proteinG,
     carbsG: result.carbsG,
     fatG: result.fatG,
+    sugarG: result.sugarG,
     loggedAt: new Date().toISOString(),
     mealType,
-    source: 'ai',
+    source: result.source,
   };
 }

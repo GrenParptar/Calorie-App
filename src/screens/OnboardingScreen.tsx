@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View, Pressable } from 'react-native';
 import { ArchHeader } from '@/components/ArchHeader';
 import { BohoCard } from '@/components/BohoCard';
+import { UnitToggle } from '@/components/UnitToggle';
 import { colors, radii, spacing, typography } from '@/theme/theme';
-import { ActivityLevel, Gender, GoalDirection, UserProfile } from '@/types';
+import { ActivityLevel, Gender, GoalDirection, UnitSystem, UserProfile } from '@/types';
 import { ACTIVITY_LABELS, safeMinWeeks } from '@/utils/calculations';
+import { feetInchesToCm, lbToKg } from '@/utils/unitConversions';
 import { useUser } from '@/context/UserContext';
 
 const GENDERS: { value: Gender; label: string }[] = [
@@ -44,23 +46,41 @@ function Pill<T extends string>({
 
 export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
   const { setProfile } = useUser();
+  const [unitSystem, setUnitSystem] = useState<UnitSystem>('metric');
   const [name, setName] = useState('');
   const [gender, setGender] = useState<Gender>('female');
   const [age, setAge] = useState('28');
+
+  // Metric inputs
   const [heightCm, setHeightCm] = useState('165');
   const [weightKg, setWeightKg] = useState('68');
+  const [goalWeightKg, setGoalWeightKg] = useState('62');
+
+  // Imperial inputs
+  const [heightFeet, setHeightFeet] = useState('5');
+  const [heightInches, setHeightInches] = useState('5');
+  const [weightLb, setWeightLb] = useState('150');
+  const [goalWeightLb, setGoalWeightLb] = useState('137');
+
   const [activityLevel, setActivityLevel] = useState<ActivityLevel>('light');
   const [goalDirection, setGoalDirection] = useState<GoalDirection>('lose');
-  const [goalWeightKg, setGoalWeightKg] = useState('62');
   const [goalTimeframeWeeks, setGoalTimeframeWeeks] = useState('12');
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
+    const isImperial = unitSystem === 'imperial';
+
+    const heightCmValue = isImperial
+      ? feetInchesToCm(Number(heightFeet), Number(heightInches))
+      : Number(heightCm);
+    const weightKgValue = isImperial ? lbToKg(Number(weightLb)) : Number(weightKg);
+    const goalWeightKgValue = isImperial ? lbToKg(Number(goalWeightLb)) : Number(goalWeightKg);
+
     const parsed = {
       age: Number(age),
-      heightCm: Number(heightCm),
-      weightKg: Number(weightKg),
-      goalWeightKg: Number(goalWeightKg),
+      heightCm: heightCmValue,
+      weightKg: weightKgValue,
+      goalWeightKg: goalWeightKgValue,
       goalTimeframeWeeks: Number(goalTimeframeWeeks),
     };
 
@@ -95,6 +115,7 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
       goalDirection,
       goalWeightKg: parsed.goalWeightKg,
       goalTimeframeWeeks: parsed.goalTimeframeWeeks,
+      unitSystem,
     };
 
     await setProfile(profile);
@@ -106,7 +127,12 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
       <ArchHeader title="Welcome to Bloom" subtitle="Let's personalize your plan" />
 
       <BohoCard style={styles.section}>
-        <Text style={typography.label as any}>YOUR NAME</Text>
+        <Text style={typography.label as any}>UNITS</Text>
+        <View style={styles.fieldSpacing}>
+          <UnitToggle value={unitSystem} onChange={setUnitSystem} />
+        </View>
+
+        <Text style={[typography.label as any, styles.fieldSpacing]}>YOUR NAME</Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="e.g. Sam" placeholderTextColor={colors.inkSoft} />
 
         <Text style={[typography.label as any, styles.fieldSpacing]}>GENDER</Text>
@@ -122,13 +148,31 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
             <TextInput style={styles.input} keyboardType="numeric" value={age} onChangeText={setAge} />
           </View>
           <View style={styles.half}>
-            <Text style={typography.label as any}>HEIGHT (CM)</Text>
-            <TextInput style={styles.input} keyboardType="numeric" value={heightCm} onChangeText={setHeightCm} />
+            {unitSystem === 'metric' ? (
+              <>
+                <Text style={typography.label as any}>HEIGHT (CM)</Text>
+                <TextInput style={styles.input} keyboardType="numeric" value={heightCm} onChangeText={setHeightCm} />
+              </>
+            ) : (
+              <>
+                <Text style={typography.label as any}>HEIGHT (FT / IN)</Text>
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, styles.smallInput]} keyboardType="numeric" value={heightFeet} onChangeText={setHeightFeet} />
+                  <TextInput style={[styles.input, styles.smallInput]} keyboardType="numeric" value={heightInches} onChangeText={setHeightInches} />
+                </View>
+              </>
+            )}
           </View>
         </View>
 
-        <Text style={[typography.label as any, styles.fieldSpacing]}>CURRENT WEIGHT (KG)</Text>
-        <TextInput style={styles.input} keyboardType="numeric" value={weightKg} onChangeText={setWeightKg} />
+        <Text style={[typography.label as any, styles.fieldSpacing]}>
+          CURRENT WEIGHT ({unitSystem === 'metric' ? 'KG' : 'LB'})
+        </Text>
+        {unitSystem === 'metric' ? (
+          <TextInput style={styles.input} keyboardType="numeric" value={weightKg} onChangeText={setWeightKg} />
+        ) : (
+          <TextInput style={styles.input} keyboardType="numeric" value={weightLb} onChangeText={setWeightLb} />
+        )}
 
         <Text style={[typography.label as any, styles.fieldSpacing]}>ACTIVITY LEVEL</Text>
         <View style={styles.wrapRow}>
@@ -149,8 +193,14 @@ export function OnboardingScreen({ onComplete }: { onComplete: () => void }) {
         {goalDirection !== 'maintain' && (
           <View style={styles.row}>
             <View style={styles.half}>
-              <Text style={[typography.label as any, styles.fieldSpacing]}>GOAL WEIGHT (KG)</Text>
-              <TextInput style={styles.input} keyboardType="numeric" value={goalWeightKg} onChangeText={setGoalWeightKg} />
+              <Text style={[typography.label as any, styles.fieldSpacing]}>
+                GOAL WEIGHT ({unitSystem === 'metric' ? 'KG' : 'LB'})
+              </Text>
+              {unitSystem === 'metric' ? (
+                <TextInput style={styles.input} keyboardType="numeric" value={goalWeightKg} onChangeText={setGoalWeightKg} />
+              ) : (
+                <TextInput style={styles.input} keyboardType="numeric" value={goalWeightLb} onChangeText={setGoalWeightLb} />
+              )}
             </View>
             <View style={styles.half}>
               <Text style={[typography.label as any, styles.fieldSpacing]}>TIMEFRAME (WEEKS)</Text>
@@ -177,6 +227,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   wrapRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
   half: { flex: 1 },
+  smallInput: { flex: 1, marginTop: 0 },
   input: {
     backgroundColor: colors.cream,
     borderRadius: radii.sm,

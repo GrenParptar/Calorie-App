@@ -6,17 +6,17 @@ import { ProgressBar } from '@/components/ProgressBar';
 import { WaterDrop, WaterQuickAdd } from '@/components/WaterDrop';
 import { colors, spacing, typography } from '@/theme/theme';
 import { useLog } from '@/context/LogContext';
+import { useUser } from '@/context/UserContext';
+import { formatVolume, mlToFlOz } from '@/utils/unitConversions';
 
 const GOAL_ML = 2000;
 const CUP_ML = 250;
-const QUICK_ADDS = [
-  { amountMl: 150, label: '150ml' },
-  { amountMl: 250, label: '250ml' },
-  { amountMl: 500, label: '500ml' },
-];
+const QUICK_ADDS_ML = [150, 250, 500];
 
 export function WaterScreen() {
   const { today, addWater, removeWater } = useLog();
+  const { profile } = useUser();
+  const unitSystem = profile?.unitSystem ?? 'metric';
   const totalMl = today.water.reduce((sum, w) => sum + w.amountMl, 0);
   const cupsFilled = Math.floor(totalMl / CUP_ML);
   const totalCups = Math.ceil(GOAL_ML / CUP_ML);
@@ -26,8 +26,8 @@ export function WaterScreen() {
       <ArchHeader title="Water" subtitle="Stay in bloom, stay hydrated" />
 
       <BohoCard style={styles.section}>
-        <Text style={styles.bigNumber}>{(totalMl / 1000).toFixed(2)}L</Text>
-        <Text style={typography.caption as any}>of {(GOAL_ML / 1000).toFixed(1)}L daily goal</Text>
+        <Text style={styles.bigNumber}>{formatVolume(totalMl, unitSystem)}</Text>
+        <Text style={typography.caption as any}>of {formatVolume(GOAL_ML, unitSystem)} daily goal</Text>
         <View style={styles.spacer} />
         <ProgressBar progress={totalMl / GOAL_ML} color={colors.water} />
 
@@ -45,8 +45,13 @@ export function WaterScreen() {
       <BohoCard style={styles.section}>
         <Text style={typography.heading as any}>Quick add</Text>
         <View style={styles.quickRow}>
-          {QUICK_ADDS.map((q) => (
-            <WaterQuickAdd key={q.amountMl} amountMl={q.amountMl} label={q.label} onPress={() => addWater(q.amountMl)} />
+          {QUICK_ADDS_ML.map((amountMl) => (
+            <WaterQuickAdd
+              key={amountMl}
+              amountMl={amountMl}
+              label={unitSystem === 'metric' ? `${amountMl}ml` : `${mlToFlOz(amountMl)}fl oz`}
+              onPress={() => addWater(amountMl)}
+            />
           ))}
         </View>
       </BohoCard>
@@ -61,7 +66,7 @@ export function WaterScreen() {
             .reverse()
             .map((w) => (
               <View key={w.id} style={styles.logRow}>
-                <Text style={typography.body as any}>{w.amountMl}ml</Text>
+                <Text style={typography.body as any}>{formatVolume(w.amountMl, unitSystem)}</Text>
                 <Text style={typography.caption as any} onPress={() => removeWater(w.id)}>
                   Remove
                 </Text>

@@ -3,7 +3,8 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { ArchHeader } from '@/components/ArchHeader';
 import { BohoCard } from '@/components/BohoCard';
 import { colors, radii, spacing, typography } from '@/theme/theme';
-import { aiResultToFoodEntry, AiFoodResult, searchFoodWithAi } from '@/services/aiFoodService';
+import { aiResultToFoodEntry, AiFoodResult, scaleFoodResult } from '@/services/aiFoodService';
+import { searchFood } from '@/services/foodLookupService';
 import { useLog } from '@/context/LogContext';
 import { FoodEntry } from '@/types';
 
@@ -14,23 +15,39 @@ const MEALS: { value: FoodEntry['mealType']; label: string }[] = [
   { value: 'snack', label: 'Snack' },
 ];
 
+const SOURCE_LABELS: Record<AiFoodResult['source'], string> = {
+  'open-food-facts': 'Open Food Facts',
+  ai: 'AI web search',
+  manual: 'local dataset',
+  recent: 'recent',
+};
+
 export function FoodSearchScreen() {
   const { addFood } = useLog();
   const [query, setQuery] = useState('');
   const [mealType, setMealType] = useState<FoodEntry['mealType']>('breakfast');
-  const [result, setResult] = useState<AiFoodResult | null>(null);
+  const [baseResult, setBaseResult] = useState<AiFoodResult | null>(null);
+  const [amountText, setAmountText] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [logged, setLogged] = useState(false);
 
+  const displayedResult: AiFoodResult | null = (() => {
+    if (!baseResult) return null;
+    const amount = Number(amountText);
+    if (!amountText || Number.isNaN(amount) || amount <= 0) return baseResult;
+    return scaleFoodResult(baseResult, amount);
+  })();
+
   const handleSearch = async () => {
     setIsSearching(true);
     setError(null);
-    setResult(null);
+    setBaseResult(null);
     setLogged(false);
     try {
-      const found = await searchFoodWithAi(query);
-      setResult(found);
+      const found = await searchFood(query);
+      setBaseResult(found);
+      setAmountText(String(found.quantity));
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong.');
     } finally {
@@ -39,19 +56,19 @@ export function FoodSearchScreen() {
   };
 
   const handleLog = () => {
-    if (!result) return;
-    addFood(aiResultToFoodEntry(result, mealType));
+    if (!displayedResult) return;
+    addFood(aiResultToFoodEntry(displayedResult, mealType));
     setLogged(true);
   };
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
-      <ArchHeader title="Search Food" subtitle="Describe anything — AI fills in the nutrition" />
+      <ArchHeader title="Search Food" subtitle="Name-brand or generic — we'll find the real numbers" />
 
       <BohoCard style={styles.section}>
         <TextInput
           style={styles.input}
-          placeholder='e.g. "2 scrambled eggs with avocado toast"'
+          placeholder='e.g. "Quest protein bar" or "2 scrambled eggs"'
           placeholderTextColor={colors.inkSoft}
           value={query}
           onChangeText={setQuery}
@@ -62,7 +79,7 @@ export function FoodSearchScreen() {
           {isSearching ? (
             <ActivityIndicator color={colors.cream} />
           ) : (
-            <Text style={styles.searchButtonText}>Search with AI</Text>
+            <Text style={styles.searchButtonText}>Search</Text>
           )}
         </Pressable>
       </BohoCard>
@@ -73,19 +90,28 @@ export function FoodSearchScreen() {
         </BohoCard>
       )}
 
-      {result && (
+      {displayedResult && (
         <BohoCard style={styles.section}>
-          <Text style={typography.heading as any}>{result.name}</Text>
-          {result.brand ? <Text style={typography.caption as any}>{result.brand}</Text> : null}
+          <Text style={typography.heading as any}>{displayedResult.name}</Text>
+          {displayedResult.brand ? <Text style={typography.caption as any}>{displayedResult.brand}</Text> : null}
           <Text style={[typography.caption as any, styles.spacer]}>
-            {result.quantity} {result.unit} · confidence: {result.confidence}
+            source: {SOURCE_LABELS[displayedResult.source]} · confidence: {displayedResult.confidence}
           </Text>
 
+          <Text style={[typography.label as any, styles.spacer]}>AMOUNT ({displayedResult.unit})</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            value={amountText}
+            onChangeText={setAmountText}
+          />
+
           <View style={styles.macroGrid}>
-            <MacroStat label="Calories" value={`${result.calories}`} />
-            <MacroStat label="Protein" value={`${result.proteinG}g`} />
-            <MacroStat label="Carbs" value={`${result.carbsG}g`} />
-            <MacroStat label="Fat" value={`${result.fatG}g`} />
+            <MacroStat label="Calories" value={`${displayedResult.calories}`} />
+            <MacroStat label="Protein" value={`${displayedResult.proteinG}g`} />
+            <MacroStat label="Carbs" value={`${displayedResult.carbsG}g`} />
+            <MacroStat label="Fat" value={`${displayedResult.fatG}g`} />
+            <MacroStat label="Sugar" value={`${displayedResult.sugarG}g`} />
           </View>
 
           <Text style={[typography.label as any, styles.spacer]}>LOG AS</Text>

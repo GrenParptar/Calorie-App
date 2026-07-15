@@ -2,26 +2,40 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ArchHeader } from '@/components/ArchHeader';
 import { BohoCard } from '@/components/BohoCard';
+import { UnitToggle } from '@/components/UnitToggle';
 import { colors, spacing, typography } from '@/theme/theme';
 import { useUser } from '@/context/UserContext';
 import { ACTIVITY_LABELS } from '@/utils/calculations';
+import { formatHeight, formatWeight } from '@/utils/unitConversions';
+import { UnitSystem } from '@/types';
 
 export function ProfileScreen() {
-  const { profile, plan } = useUser();
+  const { profile, plan, setProfile } = useUser();
   if (!profile || !plan) return null;
 
   const weightDelta = profile.goalWeightKg - profile.weightKg;
   const directionLabel = weightDelta < 0 ? 'lose' : weightDelta > 0 ? 'gain' : 'maintain';
+
+  const handleUnitChange = (unitSystem: UnitSystem) => {
+    setProfile({ ...profile, unitSystem });
+  };
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
       <ArchHeader title={profile.name} subtitle="Your plan, at a glance" />
 
       <BohoCard style={styles.section}>
+        <Text style={typography.heading as any}>Units</Text>
+        <View style={styles.spacer}>
+          <UnitToggle value={profile.unitSystem} onChange={handleUnitChange} />
+        </View>
+      </BohoCard>
+
+      <BohoCard style={styles.section}>
         <Text style={typography.heading as any}>Profile</Text>
         <Row label="Age" value={`${profile.age}`} />
-        <Row label="Height" value={`${profile.heightCm} cm`} />
-        <Row label="Weight" value={`${profile.weightKg} kg`} />
+        <Row label="Height" value={formatHeight(profile.heightCm, profile.unitSystem)} />
+        <Row label="Weight" value={formatWeight(profile.weightKg, profile.unitSystem)} />
         <Row label="Activity" value={ACTIVITY_LABELS[profile.activityLevel]} />
       </BohoCard>
 
@@ -30,10 +44,10 @@ export function ProfileScreen() {
         <Text style={[typography.body as any, styles.spacer]}>
           {directionLabel === 'maintain'
             ? 'Maintain current weight'
-            : `${directionLabel === 'lose' ? 'Lose' : 'Gain'} ${Math.abs(weightDelta).toFixed(1)} kg over ${profile.goalTimeframeWeeks} weeks`}
+            : `${directionLabel === 'lose' ? 'Lose' : 'Gain'} ${formatWeight(Math.abs(weightDelta), profile.unitSystem)} over ${profile.goalTimeframeWeeks} weeks`}
         </Text>
         <Text style={typography.caption as any}>
-          ≈ {Math.abs(plan.weeklyWeightChangeKg).toFixed(2)} kg/week
+          ≈ {formatWeight(Math.abs(plan.weeklyWeightChangeKg), profile.unitSystem)}/week
         </Text>
         {!plan.isTimeframeSafe && (
           <Text style={styles.warningText}>
@@ -50,6 +64,7 @@ export function ProfileScreen() {
         <Row label="Protein" value={`${plan.proteinG} g`} />
         <Row label="Carbs" value={`${plan.carbsG} g`} />
         <Row label="Fat" value={`${plan.fatG} g`} />
+        <Row label="Sugar limit" value={`${plan.sugarLimitG} g`} />
       </BohoCard>
 
       <BohoCard style={styles.section}>

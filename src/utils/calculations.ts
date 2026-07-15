@@ -45,7 +45,10 @@ export function calculateMacros(calories: number, weightKg: number, goal: UserPr
   const remainingCals = Math.max(calories - proteinCals - fatCals, 0);
   const carbsG = Math.round(remainingCals / 4);
 
-  return { calories: Math.round(calories), proteinG, carbsG, fatG };
+  // WHO guidance: keep free sugars under ~10% of total energy intake.
+  const sugarLimitG = Math.round((calories * 0.1) / 4);
+
+  return { calories: Math.round(calories), proteinG, carbsG, fatG, sugarLimitG };
 }
 
 export function buildPlan(profile: UserProfile): PlanSummary {
